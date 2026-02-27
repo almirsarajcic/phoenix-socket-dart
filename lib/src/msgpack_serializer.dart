@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:typed_data';
 import 'package:msgpack_dart/msgpack_dart.dart';
 import 'package:logging/logging.dart';
@@ -43,10 +44,11 @@ class MessagePackCodec {
       // Serialize to MessagePack binary
       final bytes = serialize(data);
 
-      // Convert to base64 for WebSocket text frame compatibility
-      // Note: Phoenix Channels can handle binary frames, but for maximum
-      // compatibility we encode as base64 string
-      final encoded = String.fromCharCodes(bytes);
+      // Convert to base64 for WebSocket text frame compatibility.
+      // base64 is required here because MessagePack bytes can contain values
+      // >= 0x80 which are not valid UTF-8 single bytes and would be corrupted
+      // by String.fromCharCodes through a text frame.
+      final encoded = base64.encode(bytes);
 
       _logger.finest('Encoded MessagePack: ${bytes.length} bytes');
       return encoded;
@@ -67,8 +69,8 @@ class MessagePackCodec {
         return [];
       }
 
-      // Convert string back to bytes
-      final bytes = Uint8List.fromList(rawData.codeUnits);
+      // Decode from base64 back to MessagePack bytes
+      final bytes = base64.decode(rawData);
 
       // Deserialize from MessagePack
       final decoded = deserialize(bytes);
@@ -168,7 +170,7 @@ MessageSerializer createMessagePackSerializer() {
 /// ```
 MessageSerializer createBinaryMessagePackSerializer() {
   return MessageSerializer(
-    decoder: (data) => MessagePackCodec.decodeBinary(data as Uint8List),
-    encoder: (data) => String.fromCharCodes(MessagePackCodec.encodeBinary(data)),
+    binaryDecoder: MessagePackCodec.decodeBinary,
+    binaryEncoder: MessagePackCodec.encodeBinary,
   );
 }
